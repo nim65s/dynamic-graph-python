@@ -183,7 +183,7 @@ static struct PyModuleDef dynamicGraphModuleDef = {
   NULL
 };
 #define GETSTATE(m) ((struct dynamicgraph::python::module_state*)PyModule_GetState(m))
-#define DGPYERROR GETSTATE(PyState_FindModule(&dynamicGraphModuleDef))->dgpyError
+#define DGPYERROR GETSTATE(PyState_FindModule(&dynamicgraph::python::dynamicGraphModuleDef))->dgpyError
 #define INITERROR return NULL
 #else
 __attribute__((unused))

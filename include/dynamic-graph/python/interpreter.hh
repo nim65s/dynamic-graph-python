@@ -55,7 +55,6 @@ class DYNAMIC_GRAPH_PYTHON_DLLAPI Interpreter {
   /// Pointer to the dictionary of local variables
   PyObject* locals_;
   PyObject* mainmod_;
-  PyObject* traceback_format_exception_;
 };
 }  // namespace python
 }  // namespace dynamicgraph

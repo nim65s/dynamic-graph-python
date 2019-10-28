@@ -50,10 +50,10 @@ int main(int argc, char** argv) {
   // because re as been imported in a previous test and it is not
   // safe to delete imported module...
   res = testFile("test_python-name_error.py",
-          std::string("Traceback (most recent call last):\n"
-                      "  File \"test_python-name_error.py\", line 7, in <module>\n"
-                      "    pathList = re.split(':', pkgConfigPath)\n"
-                      "NameError: name 're' is not defined\n"),
+                 std::string("Traceback (most recent call last):\n"
+                             "  File \"test_python-name_error.py\", line 7, in <module>\n"
+                             "    pathList = re.split(':', pkgConfigPath)\n"
+                             "NameError: name 're' is not defined\n"),
                  numTest) &&
         res;
 

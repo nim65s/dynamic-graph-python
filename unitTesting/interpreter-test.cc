@@ -21,7 +21,7 @@ int main(int argc, char** argv) {
     interp.python("print I am the interpreter", result, out, err);
     assert(result.length() == 0);
     assert(out.length() == 0);
-    assert(err.length() > 100);
+    assert(err.length() > 50);
   }
   return 0;
 }

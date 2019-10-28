@@ -27,47 +27,57 @@ static const std::string pythonPrefix[8] = {"from __future__ import print_functi
                                             "import sys\n",
                                             "sys.stdout = stdout_catcher",
                                             "sys.stderr = stderr_catcher"};
-}
-}  // namespace dynamicgraph
-
-namespace dynamicgraph {
-namespace python {
 
 // Get any PyObject and get its str() representation as an std::string
-std::string obj_to_str(PyObject *o) {
-    std::string ret;
-    PyObject *os;
+std::string obj_to_str(PyObject* o) {
+  std::string ret;
+  PyObject* os;
 #if PY_MAJOR_VERSION >= 3
-    os = PyObject_Str(o);
-    assert(os != NULL);
-    assert(PyUnicode_Check(os));
-    ret = PyUnicode_AsUTF8(os);
+  os = PyObject_Str(o);
+  assert(os != NULL);
+  assert(PyUnicode_Check(os));
+  ret = PyUnicode_AsUTF8(os);
 #else
-    os = PyObject_Unicode(o);
-    assert(os != NULL);
-    assert(PyUnicode_Check(os));
-    PyObject *oss = PyUnicode_AsUTF8String(os);
-    assert(oss != NULL);
-    ret = PyString_AsString(oss);
-    Py_DECREF(oss);
+  os = PyObject_Unicode(o);
+  assert(os != NULL);
+  assert(PyUnicode_Check(os));
+  PyObject* oss = PyUnicode_AsUTF8String(os);
+  assert(oss != NULL);
+  ret = PyString_AsString(oss);
+  Py_DECREF(oss);
 #endif
-    Py_DECREF(os);
-    return ret;
+  Py_DECREF(os);
+  return ret;
 }
 
-std::string HandleErr(PyObject *ctx) {
+bool HandleErr(std::string& err, PyObject* globals_, int PythonInputType) {
   dgDEBUGIN(15);
-  std::string err = "";
+  err = "";
+  bool lres = false;
 
   if (PyErr_Occurred() != NULL) {
-      PyErr_Print();
-      PyObject *stderr_obj = PyRun_String("stderr_catcher.fetch()", Py_eval_input, ctx, ctx);
-      err = obj_to_str(stderr_obj);
-      Py_DECREF(stderr_obj);
+    bool is_syntax_error = PyErr_ExceptionMatches(PyExc_SyntaxError);
+    PyErr_Print();
+    PyObject* stderr_obj = PyRun_String("stderr_catcher.fetch()", Py_eval_input, globals_, globals_);
+    err = obj_to_str(stderr_obj);
+    Py_DECREF(stderr_obj);
+
+    // Here if there is a syntax error and
+    // and the interpreter input is set to Py_eval_input,
+    // it is maybe a statement instead of an expression.
+    // Therefore we indicate to re-evaluate the command.
+    if (is_syntax_error && PythonInputType == Py_eval_input) {
+      std::cout << "Detected a syntax error " << std::endl;
+      lres = false;
+    } else {
+      lres = true;
+    }
+
+    PyErr_Clear();
   } else {
-    std::cout << "no object generated but no error occured." << std::endl;
+    dgDEBUG(15) << "no object generated but no error occured." << std::endl;
   }
-  return err;
+  return lres;
 }
 
 Interpreter::Interpreter() {
@@ -92,11 +102,6 @@ Interpreter::Interpreter() {
   PyRun_SimpleString(pythonPrefix[6].c_str());
   PyRun_SimpleString(pythonPrefix[7].c_str());
   PyRun_SimpleString("import linecache");
-
-  traceback_format_exception_ =
-      PyDict_GetItemString(PyModule_GetDict(PyImport_AddModule("traceback")), "format_exception");
-  assert(PyCallable_Check(traceback_format_exception_));
-  Py_INCREF(traceback_format_exception_);
 
   // Allow threads
   _pyState = PyEval_SaveThread();
@@ -136,7 +141,6 @@ Interpreter::~Interpreter() {
 
   Py_DECREF(mainmod_);
   Py_DECREF(globals_);
-  Py_DECREF(traceback_format_exception_);
   // Py_Finalize();
 }
 
@@ -162,9 +166,27 @@ void Interpreter::python(const std::string& command, std::string& res, std::stri
 
   std::cout << command.c_str() << std::endl;
   PyObject* result_obj = PyRun_String(command.c_str(), Py_eval_input, globals_, globals_);
-  if (result_obj == NULL) err = HandleErr(globals_);
+  // Check if the result is null.
+  if (result_obj == NULL) {
+    std::cout << "first error" << std::endl;
 
-  PyObject *stdout_obj = 0;
+    // Test if this is a syntax error (due to the evaluation of an expression)
+    // else just output the problem.
+    if (!HandleErr(err, globals_, Py_eval_input)) {
+      std::cout << "second error" << std::endl;
+      // If this is a statement, re-parse the command.
+      result_obj = PyRun_String(command.c_str(), Py_single_input, globals_, globals_);
+
+      // If there is still an error build the appropriate err string.
+      if (result_obj == NULL) HandleErr(err, globals_, Py_single_input);
+      // If there is no error, make sure that the previous error message is erased.
+      else
+        err = "";
+    } else
+      std::cout << "Do not try a second time." << std::endl;
+  }
+
+  PyObject* stdout_obj = 0;
   stdout_obj = PyRun_String("stdout_catcher.fetch()", Py_eval_input, globals_, globals_);
   out = obj_to_str(stdout_obj);
   Py_DECREF(stdout_obj);
@@ -179,7 +201,7 @@ void Interpreter::python(const std::string& command, std::string& res, std::stri
     dgDEBUG(15) << "Result is: " << res << std::endl;
     Py_DECREF(result_obj);
   } else {
-      dgDEBUG(15) << "Result is: empty" << std::endl;
+    dgDEBUG(15) << "Result is: empty" << std::endl;
   }
   dgDEBUG(15) << "Out is: " << out << std::endl;
   dgDEBUG(15) << "Err is :" << err << std::endl;
@@ -206,7 +228,7 @@ void Interpreter::runPythonFile(std::string filename, std::string& err) {
   err = "";
   PyObject* run = PyRun_File(pFile, filename.c_str(), Py_file_input, globals_, globals_);
   if (run == NULL) {
-    err = HandleErr(globals_);
+    HandleErr(err, globals_, Py_file_input);
     std::cerr << err << std::endl;
   }
   Py_DecRef(run);
